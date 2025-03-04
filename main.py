@@ -112,8 +112,9 @@ class FileManager:
 
 
 class SakuraBlogArchiver:
-    def __init__(self):
-        self.mode = MODE.BLOG
+    def __init__(self, url: str, mode: MODE):
+        self.url = url
+        self.mode = mode
         self.max_blog_list_page = 8
         self.current_blog_list_page = 1
         self.execution_date_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
@@ -130,7 +131,7 @@ class SakuraBlogArchiver:
         response = requests.get(url, headers=headers)
         return response
 
-    def get_local_directory(self, url: str) -> str:
+    def create_local_path_from_url(self, url: str) -> str:
         path = os.path.join(self.save_dir, URLProcessor.get_relative_path(url))
         if len(path.split("/")[-1].split(".")) > 1:
             path = os.path.dirname(path)
@@ -210,9 +211,9 @@ class SakuraBlogArchiver:
 
     def get_target_html_path(self, url: str) -> str:
         if self.mode == MODE.BLOG_LIST:
-            return os.path.join(self.get_local_directory(URLProcessor.remove_all_query(url)), str(self.current_blog_list_page), "index.html")
+            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), str(self.current_blog_list_page), "index.html")
         else:
-            return os.path.join(self.get_local_directory(URLProcessor.remove_all_query(url)), "index.html")
+            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), "index.html")
 
     def save_response_content(self, response: requests.Response, target_html: str):
         with open(target_html, "w") as f:
@@ -265,20 +266,21 @@ class SakuraBlogArchiver:
         if tag.name == 'a' and URLProcessor.is_blog_list_page(tag.get('href')):
             if self.has_query(tag.get('href'), "page="):
                 page_num = tag.get_text()
-                return os.path.join(self.get_local_directory(URLProcessor.remove_all_query(download_url)), page_num, "index.html")
+                return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(download_url)), page_num, "index.html")
             else:
-                return os.path.join(self.get_local_directory(URLProcessor.remove_all_query(download_url)), "index.html")
+                return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(download_url)), "index.html")
         elif URLProcessor.is_api_endpoint(URLProcessor.remove_all_query(download_url)) or URLProcessor.is_home_page(URLProcessor.remove_all_query(download_url)):
-            return os.path.join(self.get_local_directory(URLProcessor.remove_all_query(download_url)), "index.html")
+            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(download_url)), "index.html")
         else:
-            return os.path.join(self.get_local_directory(URLProcessor.remove_query(download_url)), os.path.basename(URLProcessor.remove_all_query(download_url)))
+            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_query(download_url)), os.path.basename(URLProcessor.remove_all_query(download_url)))
 
     def save_local_html(self, soup: BeautifulSoup, local_html: str):
         with open(local_html, "w") as f:
             f.write(soup.prettify())
         self.logger.info(f"Saved local HTML to '{local_html}'.")
 
-    def loop(self, url: str):
+    def loop(self):
+        url = self.url
         start_time = time.time()
         count = 0
         while url:
@@ -291,30 +293,22 @@ class SakuraBlogArchiver:
         self.logger.info(f"Elapsed time: {elapsed_time} [sec]")
         self.logger.info(f"Count: {count}")
 
-    def main(self):
-        self.logger.info(f"Saving to '{self.save_dir}' directory.")
-        if not os.path.exists(self.save_dir):
-            os.mkdir(self.save_dir)
-        start_time = time.time()
 
-        url = "https://sakurazaka46.com/s/s46/diary/detail/36095?ima=0000&cd=blog"
-        self.loop(url)
+def main():
+    urls_and_modes = [
+        ("https://sakurazaka46.com/s/s46/diary/detail/36095?ima=0000&cd=blog", MODE.BLOG),
+        ("https://sakurazaka46.com/s/s46/artist/03?ima=0000", MODE.PROFILE),
+        ("https://sakurazaka46.com/s/s46/diary/blog/list?ima=0000&page=5&ct=03&cd=blog", MODE.BLOG_LIST)
+    ]
 
-        url = "https://sakurazaka46.com/s/s46/artist/03?ima=0000"
-        self.loop(url)
-
-        url = "https://sakurazaka46.com/s/s46/diary/blog/list?ima=0000&page=5&ct=03&cd=blog"
-        self.mode = MODE.BLOG_LIST
-        self.loop(url)
-
-        elapsed_time = time.time() - start_time
-        self.logger.info(f"Total elapsed time: {elapsed_time} [sec]")
+    for url, mode in urls_and_modes:
+        archiver = SakuraBlogArchiver(url, mode)
+        archiver.loop()
 
 
 if __name__ == "__main__":
     try:
-        archiver = SakuraBlogArchiver()
-        archiver.main()
+        main()
     except Exception as e:
-        archiver.logger.error(e)
+        getLogger(__name__).error(e)
         raise
