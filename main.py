@@ -112,9 +112,8 @@ class FileManager:
 
 
 class SakuraBlogArchiver:
-    def __init__(self, url: str, mode: MODE):
+    def __init__(self, url: str):
         self.url = url
-        self.mode = mode
         self.max_blog_list_page = 8
         self.current_blog_list_page = 1
         self.execution_date_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
@@ -210,10 +209,7 @@ class SakuraBlogArchiver:
         return next_url
 
     def get_target_html_path(self, url: str) -> str:
-        if self.mode == MODE.BLOG_LIST:
-            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), str(self.current_blog_list_page), "index.html")
-        else:
-            return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), "index.html")
+        return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), "index.html")
 
     def save_response_content(self, response: requests.Response, target_html: str):
         with open(target_html, "w") as f:
@@ -221,8 +217,7 @@ class SakuraBlogArchiver:
         self.logger.info(f"Saved to '{target_html}'.")
 
     def get_next_url(self, soup: BeautifulSoup, base_url: str) -> str:
-        next_url = self.get_next_blog_list_page_url(
-            soup) if self.mode == MODE.BLOG_LIST else self.get_next_page_url(soup)
+        next_url = self.get_next_page_url(soup)
         if next_url:
             next_url = base_url + next_url
             self.logger.info(f"Next URL: {next_url}")
@@ -279,7 +274,7 @@ class SakuraBlogArchiver:
             f.write(soup.prettify())
         self.logger.info(f"Saved local HTML to '{local_html}'.")
 
-    def loop(self):
+    def run(self):
         url = self.url
         start_time = time.time()
         count = 0
@@ -294,16 +289,36 @@ class SakuraBlogArchiver:
         self.logger.info(f"Count: {count}")
 
 
+class SakuraBlogListArchiver(SakuraBlogArchiver):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.current_blog_list_page = 1
+
+    def get_target_html_path(self, url: str) -> str:
+        return os.path.join(self.create_local_path_from_url(URLProcessor.remove_all_query(url)), str(self.current_blog_list_page), "index.html")
+
+    def get_next_url(self, soup: BeautifulSoup, base_url: str) -> str:
+        next_url = self.get_next_blog_list_page_url(soup)
+        if next_url:
+            next_url = base_url + next_url
+            self.logger.info(f"Next URL: {next_url}")
+        else:
+            self.logger.warning("Next URL not found.")
+        return next_url
+
+
 def main():
     urls_and_modes = [
-        ("https://sakurazaka46.com/s/s46/diary/detail/36095?ima=0000&cd=blog", MODE.BLOG),
-        ("https://sakurazaka46.com/s/s46/artist/03?ima=0000", MODE.PROFILE),
-        ("https://sakurazaka46.com/s/s46/diary/blog/list?ima=0000&page=5&ct=03&cd=blog", MODE.BLOG_LIST)
+        ("https://sakurazaka46.com/s/s46/diary/detail/36095?ima=0000&cd=blog",
+         SakuraBlogArchiver),
+        ("https://sakurazaka46.com/s/s46/artist/03?ima=0000", SakuraBlogArchiver),
+        ("https://sakurazaka46.com/s/s46/diary/blog/list?ima=0000&page=5&ct=03&cd=blog",
+         SakuraBlogListArchiver),
     ]
 
     for url, mode in urls_and_modes:
-        archiver = SakuraBlogArchiver(url, mode)
-        archiver.loop()
+        archiver = mode(url)
+        archiver.run()
 
 
 if __name__ == "__main__":
